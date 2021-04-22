@@ -23,9 +23,55 @@ class Wall(Tile):
 class Floor(Tile):
     color = None
 
+class Box:
+    def __init__(self, x=None, y=None):
+        if x is None and y is None:
+            while True:
+                x = random.randint(1, Viewer.width // Viewer.grid_size-2)
+                y = random.randint(1, Viewer.height // Viewer.grid_size-2)
+                for box in Simulation.boxes:
+                    if box.x == x and box.y == y:
+                        continue
+                ok = True
+                for ty, row in enumerate(Simulation.tiles):
+                    for tx, element in enumerate(row):
+                        if ty == y and tx == x and type(element) == Wall:
+                            ok = False
+                if not ok:
+                    continue
+                break
+        self.x = x
+        self.y = y
+
+        self.dx = 0
+        self.dy = 0
+
+        self.d = 0
+        self.friction = random.choice([32, 64, 96, 128, 160, 192, 224, 255])
+        self.color = (self.friction, self.friction, 0)
+
+        Simulation.boxes.append(self)
+
+    def move(self):
+        if type(Simulation.tiles[self.y+self.dy][self.x+self.dx]) == Wall:
+            self.dx, self.dy = 0,0
+        for box in Simulation.boxes:
+            if box.x == self.x+self.dx and box.y == self.y+self.dy:
+                self.dx, self.dy = 0,0
+        for agent in Simulation.agents.values():
+            if agent.x == self.x+self.dx and agent.y == self.y+self.dy:
+                self.dx, self.dy = 0,0
+        self.x += self.dx
+        self.y += self.dy
+        self.d += Viewer.grid_size
+        if self.d > self.friction:
+            self.dx, self.dy = 0,0
+            self.d = 0
+
 class Simulation:
     agents = {}
     tiles = []
+    boxes = []
 
 class Agent:
     number = 0
@@ -36,8 +82,8 @@ class Agent:
 
         if x is None and y is None:
             while True:
-                x = random.randint(0, Viewer.width // Viewer.grid_size)
-                y = random.randint(0, Viewer.height // Viewer.grid_size)
+                x = random.randint(1, Viewer.width // Viewer.grid_size-2)
+                y = random.randint(1, Viewer.height // Viewer.grid_size-2)
                 for agent in Simulation.agents.values():
                     if agent.number == self.number:
                         continue
@@ -74,10 +120,23 @@ class Agent:
             dx, dy = random.randint(-1,1), random.randint(-1,1)
             if type(Simulation.tiles[self.y+dy][self.x+dx]) == Wall:
                 continue
+            ok = True
+            for box in Simulation.boxes:
+                if box.x == self.x+dx and box.y == self.y+dy:
+                    ok = False
+            if not ok:
+                continue
             break
         self.x += dx
         self.y += dy
 
+        nosw = ((0,1),(1,0),(0,-1),(-1,0))
+        boxnosw = [False, False, False, False]
+        for n in nosw:
+            for b in Simulation.boxes:
+                if b.x == self.x+n[0] and b.y == self.y+n[1]:
+                    boxnosw[nosw.index(n)] = True
+                    b.dx, b.dy = n
 
 class Viewer:
     width = 0
@@ -85,6 +144,8 @@ class Viewer:
     grid_size = 20
     grid_color = (200,200,200)
     background_color = (255,255,255)
+    min_boxes = 60
+    max_boxes = 70
     font = None
 
     def __init__(self,width=800,height=600,num_agents=2):
@@ -159,6 +220,8 @@ class Viewer:
             row.append(Wall())
             Simulation.tiles.append(row)
 
+        for b in range(random.randint(Viewer.min_boxes,Viewer.max_boxes)):
+            Box()
         self.draw_maze()
 
         for agentnumber in range(self.num_agents):
@@ -193,19 +256,6 @@ class Viewer:
                 if char.color is not None:
                     pygame.draw.rect(self.background, char.color, (x*Viewer.grid_size,y*Viewer.grid_size,Viewer.grid_size, Viewer.grid_size))
 
-    def prepare_sprites(self):
-        """painting on the surface and create sprites"""
-        Viewer.allgroup = pygame.sprite.LayeredUpdates()  # for drawing with layers
-        Viewer.snakegroup = pygame.sprite.Group()
-        Viewer.foodgroup = pygame.sprite.Group()  # GroupSingle
-        # assign classes to groups
-        VectorSprite.groups = self.allgroup
-        Snake.groups = self.allgroup, self.snakegroup
-        Food.groups = self.allgroup, self.foodgroup
-
-        # Bubble.groups = self.allgroup, self.fxgroup  # special effects
-        # Flytext.groups = self.allgroup, self.flytextgroup, self.flygroup
-
     def run(self):
         """The mainloop"""
         running = True
@@ -214,6 +264,8 @@ class Viewer:
         while running:
             for a in Simulation.agents.values():
                 a.move_random()
+            for b in Simulation.boxes:
+                b.move()
             milliseconds = self.clock.tick(self.fps)  #
             seconds = milliseconds / 1000
             self.playtime += seconds
@@ -243,6 +295,8 @@ class Viewer:
             # --------- update all sprites ----------------
             for agent in Simulation.agents.values():
                 pygame.draw.rect(self.screen, agent.color, (agent.x*Viewer.grid_size, agent.y*Viewer.grid_size, Viewer.grid_size, Viewer.grid_size))
+            for box in Simulation.boxes:
+                pygame.draw.rect(self.screen, box.color, (box.x*Viewer.grid_size, box.y*Viewer.grid_size, Viewer.grid_size, Viewer.grid_size))
             #self.allgroup.update(seconds)
 
             # ---------- blit all sprites --------------

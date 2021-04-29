@@ -49,24 +49,31 @@ class Box:
         self.d = 0
         self.friction = random.choice([32, 64, 96, 128, 160, 192, 224, 255])
         self.color = (self.friction, self.friction, 0)
+        self.locked = False
 
         Simulation.boxes.append(self)
 
     def move(self):
+        if self.locked:
+            self.dx, self.dy = 0,0
         if type(Simulation.tiles[self.y+self.dy][self.x+self.dx]) == Wall:
             self.dx, self.dy = 0,0
         for box in Simulation.boxes:
             if box.x == self.x+self.dx and box.y == self.y+self.dy:
+                box.dx = self.dx
+                box.dy = self.dy
                 self.dx, self.dy = 0,0
         for agent in Simulation.agents.values():
             if agent.x == self.x+self.dx and agent.y == self.y+self.dy:
                 self.dx, self.dy = 0,0
         self.x += self.dx
         self.y += self.dy
-        self.d += Viewer.grid_size
-        if self.d > self.friction:
-            self.dx, self.dy = 0,0
-            self.d = 0
+        if self.dx != 0 or self.dy != 0:
+            self.d += Viewer.grid_size
+            if self.d > self.friction:
+                self.dx, self.dy = 0,0
+                self.d = 0
+
 
 class Simulation:
     agents = {}
@@ -196,29 +203,27 @@ class Viewer:
 
         self.draw_grid()
 
-        # create maze (walls/floors)
-        #for y, line in enumerate(maze1.strip().split("\n")):
-        #    row = []
-        #    for x, char in enumerate(line):
-        #        if char == "#":
-        #            row.append(Wall())
-        #        elif char == ".":
-        #            row.append(Floor())
-        #    Simulation.tiles.append(row)
-
         # create fence
-        for y in range(Viewer.height//Viewer.grid_size):
-            if y == 0 or y == Viewer.height//Viewer.grid_size-1:
+        for y in range(Viewer.height // Viewer.grid_size):
+            if y == 0 or y == Viewer.height // Viewer.grid_size - 1:
                 row = []
-                for _ in range(Viewer.width//Viewer.grid_size):
+                for _ in range(Viewer.width // Viewer.grid_size):
                     row.append(Wall())
                 Simulation.tiles.append(row)
                 continue
             row = [Wall()]
-            for x in range(Viewer.width//Viewer.grid_size-2):
+            for x in range(Viewer.width // Viewer.grid_size - 2):
                 row.append(Floor())
             row.append(Wall())
             Simulation.tiles.append(row)
+
+        # create maze (walls/floors)
+        for y, line in enumerate(maze1.strip().split("\n")):
+            for x, char in enumerate(line):
+                if char == "#":
+                    Simulation.tiles[y][x] = Wall()
+                elif char == ".":
+                    Simulation.tiles[y][x] = Floor()
 
         for b in range(random.randint(Viewer.min_boxes,Viewer.max_boxes)):
             Box()

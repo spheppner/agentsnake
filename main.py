@@ -15,16 +15,70 @@ maze1 = """
 #........aaa.bbb.ccc..#
 #.....................#"""
 
+def write(background,text,x=50,y=150,color=(0, 0, 0),font_size=None,font=None,origin="topleft",mono=False,rotation=0,style=pygame.freetype.STYLE_STRONG):
+    """blit text on a given pygame surface (given as 'background')
+    :param  background:  A pygame Surface
+    :param str text:    The text to blit
+    :param int x:  x-position of text (see origin)
+    :param int y:  y-postiont of text (see origin)
+    :param (int, int, int) color: text color
+    :param int font_size: size of font
+    :param font: font object
+    :param str origin: can be one of those values: 'center', 'centercenter', 'topleft', 'topcenter', 'topright', 'centerleft', 'centerright',
+    'bottomleft', 'bottomcenter', 'bottomright'
+    :param bool mono: DOES NOT WORK ! if True, use Viewer.monofont instead of Viewer.font
+    :param int rotation: text rotation
+    :param int style: text style, see pygame.freetype
+    """
+    if font_size is None:
+        font_size = 24
+    #
+    if font is None:
+        font = Viewer.font  # pygame.font.SysFont(font_name, font_size, bold)
+
+    if mono:
+        font = Viewer.monofont
+
+    # else:
+    #    font = Viewer.font
+    surface, rrect = font.render(
+        text, color, rotation=rotation, size=font_size, style=style
+    )
+    width, height = rrect.width, rrect.height
+    # surface = font.render(text, True, color)
+
+    if origin == "center" or origin == "centercenter":
+        background.blit(surface, (x - width // 2, y - height // 2))
+    elif origin == "topleft":
+        background.blit(surface, (x, y))
+    elif origin == "topcenter":
+        background.blit(surface, (x - width // 2, y))
+    elif origin == "topright":
+        background.blit(surface, (x - width, y))
+    elif origin == "centerleft":
+        background.blit(surface, (x, y - height // 2))
+    elif origin == "centerright":
+        background.blit(surface, (x - width, y - height // 2))
+    elif origin == "bottomleft":
+        background.blit(surface, (x, y - height))
+    elif origin == "bottomcenter":
+        background.blit(surface, (x - width // 2, y))
+    elif origin == "bottomright":
+        background.blit(surface, (x - width, y - height))
+
 class Tile:
-    pass
+    char = ""
 
 class Wall(Tile):
     color = (50,50,50)
+    char = "#"
 
 class Floor(Tile):
     color = None
+    char = "."
 
 class PressurePlate(Tile):
+    char = "_"
     def __init__(self, x, y, key=1):
         self.x = x
         self.y = y
@@ -34,6 +88,7 @@ class PressurePlate(Tile):
         Simulation.pressureplates.append(self)
 
 class Door:
+    char = "d"
     def __init__(self, x, y, key=1):
         self.x = x
         self.y = y
@@ -46,6 +101,7 @@ class Door:
         Simulation.doors.append(self)
 
 class Box:
+    char = "b"
     def __init__(self, x=None, y=None):
         if x is None and y is None:
             while True:
@@ -329,6 +385,7 @@ class Viewer:
             for x, char in enumerate(line):
                 if char.color is not None:
                     pygame.draw.rect(self.background, char.color, (x*Viewer.grid_size,y*Viewer.grid_size,Viewer.grid_size, Viewer.grid_size))
+                    write(self.background, char.char, x*Viewer.grid_size,y*Viewer.grid_size, )
 
     def run(self):
         """The mainloop"""
@@ -368,7 +425,6 @@ class Viewer:
 
 
             # ---------- clear all --------------
-            # pygame.display.set_caption(f"player 1: {self.player1.deaths}   vs. player 2: {self.player2.deaths}")     #str(nesw))
             self.screen.blit(self.background, (0, 0))
 
             # --------- update all sprites ----------------
@@ -379,8 +435,6 @@ class Viewer:
             for door in Simulation.doors:
                 pygame.draw.rect(self.screen, door.color, (door.x * Viewer.grid_size, door.y * Viewer.grid_size, Viewer.grid_size, Viewer.grid_size))
             #self.allgroup.update(seconds)
-            print([door.closed for door in Simulation.doors])
-            print([(pp.x,pp.y) for pp in Simulation.pressureplates])
             # ---------- blit all sprites --------------
             #self.allgroup.draw(self.screen)
             pygame.display.flip()

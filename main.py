@@ -79,13 +79,17 @@ class Simulation:
     agents = {}
     tiles = []
     boxes = []
+    num_seekers = 2
+    num_hiders = 2
 
 class Agent:
     number = 0
 
-    def __init__(self, x=None, y=None, color=None):
+    def __init__(self, seeker=False, x=None, y=None, color=None):
         self.number = Agent.number
         Agent.number += 1
+
+        self.seeker = seeker
 
         if x is None and y is None:
             while True:
@@ -116,6 +120,10 @@ class Agent:
                     continue
                 break
         self.color = color
+        if self.seeker is True:
+            self.color = (255,0,0)
+        else:
+            self.color = (0,0,255)
 
         self.viewdirection = 0
         self.viewrange = 5
@@ -155,7 +163,7 @@ class Viewer:
     max_boxes = 70
     font = None
 
-    def __init__(self,width=800,height=600,num_agents=2):
+    def __init__(self,width=800,height=600):
 
         Viewer.width = width
         Viewer.height = height
@@ -185,7 +193,6 @@ class Viewer:
         self.clock = pygame.time.Clock()
         self.fps = 60
         self.playtime = 0.0
-        self.num_agents = num_agents
 
         # ------ background images ------
         # self.backgroundfilenames = []  # every .jpg or .jpeg file in the folder 'data'
@@ -229,8 +236,10 @@ class Viewer:
             Box()
         self.draw_maze()
 
-        for agentnumber in range(self.num_agents):
-            Agent()
+        for _ in range(Simulation.num_seekers):
+            Agent(seeker=True)
+        for _ in range(Simulation.num_hiders):
+            Agent(seeker=False)
 
         #self.player1 = Snake(
         #    pos=pygame.math.Vector2(100, 100),

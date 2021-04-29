@@ -7,12 +7,13 @@ maze1 = """
 #######################
 #.....................#
 #.....................#
+#......aaa.bbb.ccc....#
+#......aaa.bbb.ccc....#
 #.....................#
+##########AAA#BBB#CCC##
 #.....................#
-#.....................#
-#######################"""
-
-
+#........aaa.bbb.ccc..#
+#.....................#"""
 
 class Tile:
     pass
@@ -22,6 +23,27 @@ class Wall(Tile):
 
 class Floor(Tile):
     color = None
+
+class PressurePlate(Tile):
+    def __init__(self, x, y, key=1):
+        self.x = x
+        self.y = y
+        self.key = key
+        self.color = (0,255,0)
+
+        Simulation.pressureplates.append(self)
+
+class Door:
+    def __init__(self, x, y, key=1):
+        self.x = x
+        self.y = y
+        self.key = key
+        self.closed = True
+        self.coloropen = (255,255,255)
+        self.colorclosed = (0,0,0)
+        self.color = self.colorclosed
+
+        Simulation.doors.append(self)
 
 class Box:
     def __init__(self, x=None, y=None):
@@ -36,6 +58,10 @@ class Box:
                 for ty, row in enumerate(Simulation.tiles):
                     for tx, element in enumerate(row):
                         if ty == y and tx == x and type(element) == Wall:
+                            ok = False
+                        elif ty == y and tx == x and type(element) == PressurePlate:
+                            ok = False
+                        elif ty == y and tx == x and type(element) == Door:
                             ok = False
                 if not ok:
                     continue
@@ -58,6 +84,9 @@ class Box:
             self.dx, self.dy = 0,0
         if type(Simulation.tiles[self.y+self.dy][self.x+self.dx]) == Wall:
             self.dx, self.dy = 0,0
+        if type(Simulation.tiles[self.y+self.dy][self.x+self.dx]) == Door:
+            if Simulation.tiles[self.y+self.dy][self.x+self.dx].closed is True:
+                self.dx, self.dy = 0,0
         for box in Simulation.boxes:
             if box.x == self.x+self.dx and box.y == self.y+self.dy:
                 box.dx = self.dx
@@ -74,11 +103,12 @@ class Box:
                 self.dx, self.dy = 0,0
                 self.d = 0
 
-
 class Simulation:
     agents = {}
     tiles = []
     boxes = []
+    pressureplates = []
+    doors = []
     num_seekers = 2
     num_hiders = 2
 
@@ -135,6 +165,9 @@ class Agent:
             dx, dy = random.randint(-1,1), random.randint(-1,1)
             if type(Simulation.tiles[self.y+dy][self.x+dx]) == Wall:
                 continue
+            if type(Simulation.tiles[self.y+dy][self.x+dx]) == Door:
+                if Simulation.tiles[self.y+dy][self.x+dx].closed is True:
+                    continue
             ok = True
             for box in Simulation.boxes:
                 if box.x == self.x+dx and box.y == self.y+dy:
@@ -142,16 +175,26 @@ class Agent:
             if not ok:
                 continue
             break
+        #for pp in Simulation.pressureplates:
+        #    if pp.x == self.x and pp.y == self.y:
+        #        door = [d for d in Simulation.doors if d.key == pp.key]
+        #        for d in door:
+        #            if d.closed is not True:
+        #                d.closed = True
+        nosw = ((0, 1), (1, 0), (0, -1), (-1, 0))
+        for n in nosw:
+            for b in Simulation.boxes:
+                if b.x == self.x + n[0] and b.y == self.y + n[1]:
+                    b.dx, b.dy = n
         self.x += dx
         self.y += dy
 
-        nosw = ((0,1),(1,0),(0,-1),(-1,0))
-        boxnosw = [False, False, False, False]
-        for n in nosw:
-            for b in Simulation.boxes:
-                if b.x == self.x+n[0] and b.y == self.y+n[1]:
-                    boxnosw[nosw.index(n)] = True
-                    b.dx, b.dy = n
+        for pp in Simulation.pressureplates:
+            if pp.x == self.x and pp.y == self.y:
+                door = [d for d in Simulation.doors if d.key == pp.key]
+                for d in door:
+                    if d.closed is not False:
+                        d.closed = False
 
 class Viewer:
     width = 0
@@ -231,6 +274,23 @@ class Viewer:
                     Simulation.tiles[y][x] = Wall()
                 elif char == ".":
                     Simulation.tiles[y][x] = Floor()
+                elif char == "a":
+                    Simulation.tiles[y][x] = PressurePlate(key=1, x=x, y=y)
+                elif char == "b":
+                    Simulation.tiles[y][x] = PressurePlate(key=2, x=x, y=y)
+                elif char == "c":
+                    Simulation.tiles[y][x] = PressurePlate(key=3, x=x, y=y)
+                elif char == "d":
+                    Simulation.tiles[y][x] = PressurePlate(key=4, x=x, y=y)
+                elif char == "A":
+                    Simulation.tiles[y][x] = Door(key=1, x=x, y=y)
+                elif char == "B":
+                    Simulation.tiles[y][x] = Door(key=2, x=x, y=y)
+                elif char == "C":
+                    Simulation.tiles[y][x] = Door(key=3, x=x, y=y)
+                elif char == "D":
+                    Simulation.tiles[y][x] = Door(key=4, x=x, y=y)
+
 
         for b in range(random.randint(Viewer.min_boxes,Viewer.max_boxes)):
             Box()
@@ -280,6 +340,11 @@ class Viewer:
                 a.move_random()
             for b in Simulation.boxes:
                 b.move()
+            for d in Simulation.doors:
+                if d.closed is True and d.color != d.colorclosed:
+                    d.color = d.colorclosed
+                elif d.closed is False and d.color != d.coloropen:
+                    d.color = d.coloropen
             milliseconds = self.clock.tick(self.fps)  #
             seconds = milliseconds / 1000
             self.playtime += seconds
@@ -311,8 +376,11 @@ class Viewer:
                 pygame.draw.rect(self.screen, agent.color, (agent.x*Viewer.grid_size, agent.y*Viewer.grid_size, Viewer.grid_size, Viewer.grid_size))
             for box in Simulation.boxes:
                 pygame.draw.rect(self.screen, box.color, (box.x*Viewer.grid_size, box.y*Viewer.grid_size, Viewer.grid_size, Viewer.grid_size))
+            for door in Simulation.doors:
+                pygame.draw.rect(self.screen, door.color, (door.x * Viewer.grid_size, door.y * Viewer.grid_size, Viewer.grid_size, Viewer.grid_size))
             #self.allgroup.update(seconds)
-
+            print([door.closed for door in Simulation.doors])
+            print([(pp.x,pp.y) for pp in Simulation.pressureplates])
             # ---------- blit all sprites --------------
             #self.allgroup.draw(self.screen)
             pygame.display.flip()

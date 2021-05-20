@@ -220,12 +220,7 @@ class Agent:
             self.grabbed_box.x = oldx
             self.grabbed_box.y = oldy
 
-        for pp in Simulation.pressureplates:
-            if pp.x == self.x and pp.y == self.y:
-                door = [d for d in Simulation.doors if d.key == pp.key]
-                for d in door:
-                    if d.closed is not False:
-                        d.closed = False
+
 
     def grab(self):
         if self.state == 1:
@@ -509,6 +504,30 @@ class Viewer:
                 a.random_action()
             for b in Simulation.boxes:
                 b.move()
+            #---pressureplates---
+            for d in Simulation.doors:
+                d.closed = True
+                #alle türen sind zu
+
+            for pp in Simulation.pressureplates:
+                for a in Simulation.agents.values():
+                    if a.x == pp.x and a.y == pp.y:
+                        doors = [d for d in Simulation.doors if d.key == pp.key] # TODO: eigene funktion machen
+                        for d in doors:
+                            d.closed = False
+                        break
+                else:
+                    # no agent was on this pp - boxes
+                    for box in Simulation.boxes:
+                        if box.x == pp.x and box.y == pp.y:
+                            doors = [d for d in Simulation.doors if d.key == pp.key] # TODO: eigene funktion machen
+                            for d in doors:
+                                d.closed = False
+                            break
+
+
+
+            #---
             for d in Simulation.doors:
                 if d.closed is True and d.color != d.colorclosed:
                     d.color = d.colorclosed

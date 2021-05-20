@@ -143,7 +143,9 @@ class Agent:
         self.seeker = seeker
 
         self.state = 0  # 0 ..... No State (can run, grab, ungrab, push)
-        # 1 ..... Grabbed Box (can run, ungrab)
+                        # 1 ..... Grabbed Box (can run, ungrab)
+
+        self.grabbed_box = None
 
         if x is None and y is None:
             while True:
@@ -190,11 +192,9 @@ class Agent:
             dx, dy = random.randint(-1, 1), random.randint(-1, 1)
             self.move(dx, dy)
         elif action == 2:
-            # self.grab()  IMPLEMENT
-            pass
+            self.grab()
         elif action == 3:
-            # self.ungrab() IMPLEMENT
-            pass
+            self.ungrab()
         elif action == 4:
             self.kick()
 
@@ -211,8 +211,14 @@ class Agent:
         if ok is False:
             dx, dy = 0, 0
 
+        oldx, oldy = self.x, self.y
         self.x += dx
         self.y += dy
+
+        if self.state == 1:
+            # Box is grabbed -> Move with us
+            self.grabbed_box.x = oldx
+            self.grabbed_box.y = oldy
 
         for pp in Simulation.pressureplates:
             if pp.x == self.x and pp.y == self.y:
@@ -221,13 +227,35 @@ class Agent:
                     if d.closed is not False:
                         d.closed = False
 
-    def kick(self):
+    def grab(self):
+        if self.state == 1:
+            # already busy grabbing box
+            return
         nosw = ((0, 1), (1, 0), (0, -1), (-1, 0))
-        for n in nosw:
+        for direction in nosw:
             for b in Simulation.boxes:
-                if b.x == self.x + n[0] and b.y == self.y + n[1]:
-                    b.dx, b.dy = n
-                    print("kicked box")
+                if b.x == self.x + direction[0] and b.y == self.y + direction[1]:
+                    self.grabbed_box = b
+                    self.state = 1
+                    print(str(self.number) + ": grabbed box")
+
+    def ungrab(self):
+        if self.state != 1:
+            # no box grabbed
+            return
+        self.state = 0
+        self.grabbed_box = None
+        print(str(self.number) + ": ungrabbed box")
+
+    def kick(self):
+        if self.state == 1:
+            # cant kick when grabbing box
+            return
+        nosw = ((0, 1), (1, 0), (0, -1), (-1, 0))
+        for direction in nosw:
+            for b in Simulation.boxes:
+                if b.x == self.x + direction[0] and b.y == self.y + direction[1]:
+                    b.dx, b.dy = direction
 
     def make_fov_map(self):
         # clear fov_map

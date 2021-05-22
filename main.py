@@ -147,6 +147,9 @@ class Agent:
 
         self.grabbed_box = None
 
+        self.turns_alive = 0
+        self.hp = 1
+
         if x is None and y is None:
             while True:
                 x = random.randint(1, Viewer.width // Viewer.grid_size - 2)
@@ -205,6 +208,13 @@ class Agent:
         if type(Simulation.tiles[self.y + dy][self.x + dx]) == Door:
             if Simulation.tiles[self.y + dy][self.x + dx].closed is True:
                 ok = False
+        for a in Simulation.agents.values():
+            if a.number == self.number:
+                continue
+            if a.x == self.x + dx and a.y == self.y + dy:
+                ok = False
+                if self.seeker and not a.seeker:
+                    a.hp = 0 # kill hider if self.seeker
         for box in Simulation.boxes:
             if box.x == self.x + dx and box.y == self.y + dy:
                 ok = False
@@ -220,8 +230,6 @@ class Agent:
             self.grabbed_box.x = oldx
             self.grabbed_box.y = oldy
 
-
-
     def grab(self):
         if self.state == 1:
             # already busy grabbing box
@@ -232,7 +240,10 @@ class Agent:
                 if b.x == self.x + direction[0] and b.y == self.y + direction[1]:
                     self.grabbed_box = b
                     self.state = 1
-                    print(str(self.number) + ": grabbed box")
+            for corpse in [c for c in Simulation.agents.values() if c.hp == 0]:
+                if corpse.x == self.x + direction[0] and corpse.y == self.y + direction[1]:
+                    self.grabbed_box = corpse
+                    self.state = 1
 
     def ungrab(self):
         if self.state != 1:
@@ -240,7 +251,6 @@ class Agent:
             return
         self.state = 0
         self.grabbed_box = None
-        print(str(self.number) + ": ungrabbed box")
 
     def kick(self):
         if self.state == 1:
@@ -251,6 +261,9 @@ class Agent:
             for b in Simulation.boxes:
                 if b.x == self.x + direction[0] and b.y == self.y + direction[1]:
                     b.dx, b.dy = direction
+            for corpse in [c for c in Simulation.agents.values() if c.hp == 0]:
+                if corpse.x == self.x + direction[0] and corpse.y == self.y + direction[1]:
+                    corpse.move(direction[0], direction[1])
 
     def make_fov_map(self):
         # clear fov_map
@@ -501,7 +514,9 @@ class Viewer:
         # --------------------------- main loop --------------------------
         while running:
             for a in Simulation.agents.values():
-                a.random_action()
+                if a.hp > 0:
+                    a.random_action()
+                    a.turns_alive += 1
             for b in Simulation.boxes:
                 b.move()
             #---pressureplates---
@@ -569,7 +584,12 @@ class Viewer:
             # ----------- collision detection ------------
 
             # ---------- clear all --------------
-            # pygame.display.set_caption(f"player 1: {self.player1.deaths}   vs. player 2: {self.player2.deaths}")     #str(nesw))
+            turns_alive = [h.turns_alive for h in Simulation.agents.values() if not h.seeker]
+            pygame.display.set_caption(f"FPS: {self.clock.get_fps():.2f} | Turns-Alive: {str(turns_alive)}")     #str(nesw))
+            if not any([h.hp for h in Simulation.agents.values() if not h.seeker]):
+                print("Gameover!")
+                print(turns_alive)
+                break
             self.screen.blit(self.background, (0, 0))
 
             # --------- update all sprites ----------------

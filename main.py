@@ -1,7 +1,7 @@
 import pygame
 import pygame.freetype
 import random
-import fov_tools
+#import fov_tools
 
 maze1 = """
 #######################
@@ -16,18 +16,47 @@ maze1 = """
 #.....................#"""
 
 
-class Tile:
-    block_sight = False
+def choose_random_place():
+    """ choose a place in the playfield that is not occupied
+        bye other boxes, agents, walls or closed doors
 
+        returns: x,y [int]
+    """
+    ok = False
+    while not ok:
+        x = random.randint(1, Viewer.width // Viewer.grid_size - 2)
+        y = random.randint(1, Viewer.height // Viewer.grid_size - 2)
+        for box in Simulation.boxes:
+            if box.x == x and box.y == y:
+                continue
+        ok = True
+        for ty, row in enumerate(Simulation.tiles):
+            for tx, element in enumerate(row):
+                if (ty == y and tx == x):
+                    if type(element) in [Wall, PressurePlate, Door, TransparentWall]:
+                        ok = False
+                        break
+    return x, y
+
+class Tile:
+    """parent class of a basic tile like floor, wall etc."""
+    block_sight = False
+    block_movement = False
 
 class Wall(Tile):
+    """outer border of playfield must be made out of walls"""
     color = (50, 50, 50)
     block_sight = True
+    block_movement = True
 
+class TransparentWall(Tile):
+    """a wall out of transparent material"""
+    color = (0, 255, 255) # light blue
+    block_sight = False
 
 class Floor(Tile):
+    """allows unrestricted movement of boxes, agents etc"""
     color = None
-
 
 class PressurePlate(Tile):
     def __init__(self, x, y, key=1):
@@ -47,41 +76,37 @@ class Door:
         self.closed = True
         self.coloropen = (255, 255, 255)
         self.colorclosed = (0, 0, 0)
-        self.color = self.colorclosed
-        # self._block_sight = False
-
+        #self.color = self.colorclosed
         Simulation.doors.append(self)
+
+    @property
+    def color(self):
+        if self.closed:
+            return self.colorclosed
+        return self.coloropen
 
     @property
     def block_sight(self):
         # the door blocks the field of view (fov) only when closed
-        if self.closed: return True
+        if self.closed:
+            return True
         return False
 
+    @property
+    def block_movement(self):
+        if self.closed:
+            return True
+        return False
 
 class Box:
     block_sight = True
+    block_movement = True
 
     def __init__(self, x=None, y=None):
         if x is None and y is None:
-            while True:
-                x = random.randint(1, Viewer.width // Viewer.grid_size - 2)
-                y = random.randint(1, Viewer.height // Viewer.grid_size - 2)
-                for box in Simulation.boxes:
-                    if box.x == x and box.y == y:
-                        continue
-                ok = True
-                for ty, row in enumerate(Simulation.tiles):
-                    for tx, element in enumerate(row):
-                        if ty == y and tx == x and type(element) == Wall:
-                            ok = False
-                        elif ty == y and tx == x and type(element) == PressurePlate:
-                            ok = False
-                        elif ty == y and tx == x and type(element) == Door:
-                            ok = False
-                if not ok:
-                    continue
-                break
+            x,y = choose_random_place()
+        elif not all((x,y)):  # anything other than None/False/0 is considered True for all
+            raise ValueError(f"x {x} and y {y} must be both None or must both be an integer vale! ")
         self.x = x
         self.y = y
 
@@ -89,7 +114,7 @@ class Box:
         self.dy = 0
 
         self.d = 0
-        self.friction = random.choice([32, 64, 96, 128, 160, 192, 224, 255])
+        self.friction = random.choice([32, 64, 96, 128, 160, 192, 224, 255]) # TODO: need physic for friction
         self.color = (self.friction, self.friction, 0)
         self.locked = False
 
@@ -98,19 +123,21 @@ class Box:
     def move(self):
         if self.locked:
             self.dx, self.dy = 0, 0
-        if type(Simulation.tiles[self.y + self.dy][self.x + self.dx]) == Wall:
-            self.dx, self.dy = 0, 0
-        if type(Simulation.tiles[self.y + self.dy][self.x + self.dx]) == Door:
-            if Simulation.tiles[self.y + self.dy][self.x + self.dx].closed is True:
-                self.dx, self.dy = 0, 0
+            return
+        block_in_path = Simulation.tiles[self.y + self.dy][self.x + self.dx]
+        if block_in_path.block_movement:
+            self.dx, self.dy = 0,0
+            return
         for box in Simulation.boxes:
             if box.x == self.x + self.dx and box.y == self.y + self.dy:
-                box.dx = self.dx
-                box.dy = self.dy
+                box.dx = self.dx # TODO: impulse to other boxes need physic !
+                box.dy = self.dy # TODO: impulse to other boxes need physic !
                 self.dx, self.dy = 0, 0
+                return
         for agent in Simulation.agents.values():
             if agent.x == self.x + self.dx and agent.y == self.y + self.dy:
                 self.dx, self.dy = 0, 0
+                return
         self.x += self.dx
         self.y += self.dy
         if self.dx != 0 or self.dy != 0:
@@ -121,7 +148,7 @@ class Box:
 
 
 class Simulation:
-    agents = {}  # agent_number: agent instance
+    agents = {}  # {agent_number: agent instance}
     tiles = []
     boxes = []
     pressureplates = []
@@ -134,148 +161,162 @@ class Simulation:
 class Agent:
     number = 0
 
-    def __init__(self, seeker=False, x=None, y=None, color=None):
+    def __init__(self, seeker=False, x=None, y=None, hp=1):
         self.number = Agent.number
         Agent.number += 1
         self.torch_radius = 5
+        self.hp = hp
         # field of view: a list of list, matching the tiles of the simulation. each item can be True or False
         self.fov = []
         self.seeker = seeker
 
-        self.state = 0  # 0 ..... No State (can run, grab, ungrab, push)
-                        # 1 ..... Grabbed Box (can run, ungrab)
 
-        self.grabbed_box = None
+        self.grabbing_state = 0  # 0 (or False) ..... No State (can move, grab, push)
+                                 # 1 (or True) ..... Grabbed Box (can move, drop)
 
-        self.turns_alive = 0
-        self.hp = 1
+        self.grabbed_box = None # reference to the grabbed box instance, can also be a corpse
+
+        self.turns_alive = 0 # counter, how many turns agent was alive
 
         if x is None and y is None:
-            while True:
-                x = random.randint(1, Viewer.width // Viewer.grid_size - 2)
-                y = random.randint(1, Viewer.height // Viewer.grid_size - 2)
-                for agent in Simulation.agents.values():
-                    if agent.number == self.number:
-                        continue
-                    if agent.x == x and agent.y == y:
-                        continue
-                ok = True
-                for ty, row in enumerate(Simulation.tiles):
-                    for tx, element in enumerate(row):
-                        if ty == y and tx == x and type(element) == Wall:
-                            ok = False
-                if not ok:
-                    continue
-                break
+            x, y = choose_random_place()
+        elif not all((x,y)):  # anything other than None/False/0 is considered True for all
+            raise ValueError(f"x {x} and y {y} must be both None or must both be an integer vale! ")
+
         self.x = x
         self.y = y
 
-        if color is None:
-            while True:
-                color = (random.randint(0, 150), random.randint(0, 150), random.randint(0, 150))
-                if color == Viewer.background_color:
-                    continue
-                if color in [a.color for a in Simulation.agents.values()]:
-                    continue
-                break
-        self.color = color
+        red_min, green_min, blue_min = 0, 0 ,0
+        red_max, green_max, blue_max = 255,255,255
         if self.seeker is True:
-            self.color = (255, 0, 0)
+            red_min = 255
+            green_max = 50
+            blue_max = 50
         else:
-            self.color = (0, 0, 255)
+            red_max = 50
+            green_max = 50
+            blue_min=255
+        self.color = self.choose_random_color(red_min, red_max, green_min, green_max, blue_min, blue_max)
 
         self.viewdirection = 0
         self.viewrange = 5
 
         Simulation.agents[self.number] = self
 
+    def get_objects_near_me(self):
+        """returns a list of boxes or corpses around my position"""
+        near_me = []
+        #for (dx,dy) in ((-1,-1),(0,-1),(1,-1),(-1,0),(1,0),(-1,1),(0,1),(1,1) ):
+        for (dx, dy) in ( (0, -1), (-1, 0), (1, 0),  (0, 1) ):
+            for item in (Simulation.boxes + [body for body in Simulation.agents.values() if body.hp <= 0]):
+                if (item.x == self.x + dx) and (item.y == self.y +dy):
+                    near_me.append(item)
+        return near_me
+
+    def choose_random_color(self, red_min=0, red_max=255, green_min=0, green_max=255, blue_min=0, blue_max=255):
+        """returns a color not used by another agent or by Simulation_background_color"""
+        while True:
+            color = (random.randint(red_min, red_max), random.randint(green_min, green_max), random.randint(blue_min, blue_max))
+            if color == Viewer.background_color:
+                continue
+            if color in [a.color for a in Simulation.agents.values()]:
+                continue
+            return color
+
     def random_action(self):
-        action = random.randint(1, 4)
-        if action == 1:
-            dx, dy = random.randint(-1, 1), random.randint(-1, 1)
-            self.move(dx, dy)
-        elif action == 2:
-            self.grab()
-        elif action == 3:
-            self.ungrab()
-        elif action == 4:
-            self.kick()
+        possible_actions = [self.wait, self.move_random ]
+        
+        near_me = self.get_objects_near_me()
+        if near_me: # same as : if len(get_objects_near_me()) > 0:
+            possible_actions.append(self.kick) # grabbed box is excluded from kicking in later code
+            if not self.grabbing_state:
+                possible_actions.append(self.grab)
+        if self.grabbing_state:
+            possible_actions.append(self.drop)
+        
+        action = random.choice(possible_actions)
+        action()
+
+
+    def wait(self):
+        pass
+    
+    def drop(self):
+        self.grabbing_state = 0 
+        self.grabbed_box = None
+
+    def move_random(self):
+        #directions =  ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1))
+        directions = ( (0, -1), (-1, 0), (1, 0),  (0, 1), )
+        dx, dy = random.choice(directions)
+        self.move(dx,dy)
+        
 
     def move(self, dx, dy):
         ok = True
-        if type(Simulation.tiles[self.y + dy][self.x + dx]) == Wall:
-            ok = False
-        if type(Simulation.tiles[self.y + dy][self.x + dx]) == Door:
-            if Simulation.tiles[self.y + dy][self.x + dx].closed is True:
-                ok = False
-        for a in Simulation.agents.values():
-            if a.number == self.number:
+        tile_in_my_path = Simulation.tiles[self.y + dy][self.x + dx]
+        if tile_in_my_path.block_movement:
+            return # no movement
+        # run into other agents? corpses are blocking the way, like boxes
+        for other in Simulation.agents.values():
+            if other.number == self.number:
                 continue
-            if a.x == self.x + dx and a.y == self.y + dy:
-                ok = False
-                if self.seeker and not a.seeker:
-                    a.hp = 0 # kill hider if self.seeker
-        for box in Simulation.boxes:
+            if other.x == self.x + dx and other.y == self.y + dy:
+                if self.seeker and not other.seeker and other.hp > 0:
+                    other.hp = 0 # kill hider if self.seeker
+                if other.seeker and not self.seeker:
+                    self.hp = 0 # kill myself
+                return  # no movement
+
+        # box blocks movement?
+        for box in [b for b in list(Simulation.agents.values()) + Simulation.boxes if b != self.grabbed_box]:
             if box.x == self.x + dx and box.y == self.y + dy:
-                ok = False
-        if ok is False:
-            dx, dy = 0, 0
+                return # no movement
 
         oldx, oldy = self.x, self.y
         self.x += dx
         self.y += dy
-
-        if self.state == 1:
+        #print("moving...")
+        #print("state:", self.grabbing_state)
+        if self.grabbing_state:
             # Box is grabbed -> Move with us
             self.grabbed_box.x = oldx
             self.grabbed_box.y = oldy
+            print("moved grabbing box", self.grabbed_box)
 
     def grab(self):
-        if self.state == 1:
-            # already busy grabbing box
-            return
-        nosw = ((0, 1), (1, 0), (0, -1), (-1, 0))
-        for direction in nosw:
-            for b in Simulation.boxes:
-                if b.x == self.x + direction[0] and b.y == self.y + direction[1]:
-                    self.grabbed_box = b
-                    self.state = 1
-            for corpse in [c for c in Simulation.agents.values() if c.hp == 0]:
-                if corpse.x == self.x + direction[0] and corpse.y == self.y + direction[1]:
-                    self.grabbed_box = corpse
-                    self.state = 1
+        #if self.grabbing_state == 1 or not self.get_objects_near_me:
+        #    # already busy grabbing box or no object to grab
+        #    return
+        self.grabbed_box = random.choice(self.get_objects_near_me())
+        self.grabbing_state = 1
+        print("GRABBING", self.grabbed_box, self.grabbed_box.x, self.grabbed_box.y)
 
-    def ungrab(self):
-        if self.state != 1:
-            # no box grabbed
-            return
-        self.state = 0
+
+    def drop(self):
+        #if self.grabbing_state != 1:
+        #    # no box grabbed
+        #    return
+        print("dropping")
+        self.grabbing_state = 0
         self.grabbed_box = None
 
     def kick(self):
-        if self.state == 1:
-            # cant kick when grabbing box
-            return
-        nosw = ((0, 1), (1, 0), (0, -1), (-1, 0))
-        for direction in nosw:
-            for b in Simulation.boxes:
-                if b.x == self.x + direction[0] and b.y == self.y + direction[1]:
-                    b.dx, b.dy = direction
-            for corpse in [c for c in Simulation.agents.values() if c.hp == 0]:
-                if corpse.x == self.x + direction[0] and corpse.y == self.y + direction[1]:
-                    corpse.move(direction[0], direction[1])
+        #if self.grabbing_state == 1:
+        #    # cant kick when grabbing box
+        #    return
+        #directions = ((0, 1), (1, 0), (0, -1), (-1, 0))
+        near_me = [item for item in self.get_objects_near_me() if item != self.grabbed_box]
+        if near_me:
+            kicked_object = random.choice(near_me)
+            kicked_object.dx, kicked_object.dy =  kicked_object.x - self.x, kicked_object.y - self.y
 
-    def make_fov_map(self):
+    def make_fov_map(self, remove_artifacts = False):
         # clear fov_map
         self.fov_map = [[False for tile in line] for line in Simulation.tiles]
         # self.checked = set() # clear the set of checked coordinates
         px, py, = self.x, self.y
         # set all tiles to False
-        # for line in Simulation.tiles:
-        #    row = []
-        #    for tile in line:
-        #        row.append(False)
-        #    Game.fov_map.append(row)
         # set player's tile to visible
         self.fov_map[py][px] = True
         # get coordinates form player to point at end of torchradius / torchsquare
@@ -294,6 +335,8 @@ class Agent:
         # print(Game.fov_map)
         # ---------- the fov map is now ready to use, but has some ugly artifacts ------------
         # ---------- start post-processing fov map to clean up the artifacts ---
+        if not remove_artifacts:
+            return
         # -- basic idea: divide the torch-square into 4 equal sub-squares.
         # -- look of a invisible wall is behind (from the player perspective) a visible
         # -- ground floor. if yes, make this wall visible as well.
@@ -477,19 +520,6 @@ class Viewer:
         for _ in range(Simulation.num_hiders):
             Agent(seeker=False)
 
-        # self.player1 = Snake(
-        #    pos=pygame.math.Vector2(100, 100),
-        #    speed=Snake.speed,
-        #    color=(255, 0, 0),
-        #    move=pygame.math.Vector2(Snake.speed, 0),
-        # )
-        # self.player2 = Snake(
-        #    pos=pygame.math.Vector2(300, 200),
-        #    speed=Snake.speed,
-        #    color=(128, 255, 0),
-        #    move=pygame.math.Vector2(-Snake.speed, 0),
-        # )
-        # self.food1 = Food(pos=pygame.math.Vector2(400, 50), color=(255, 255, 0))
 
     def draw_grid(self):
         # draw grid x
@@ -505,7 +535,7 @@ class Viewer:
             for x, char in enumerate(line):
                 if char.color is not None:
                     pygame.draw.rect(self.background, char.color,
-                                     (x * Viewer.grid_size, y * Viewer.grid_size, Viewer.grid_size, Viewer.grid_size))
+                        (x * Viewer.grid_size, y * Viewer.grid_size, Viewer.grid_size, Viewer.grid_size))
 
     def run(self):
         """The mainloop"""
@@ -520,41 +550,26 @@ class Viewer:
             for b in Simulation.boxes:
                 b.move()
             #---pressureplates---
-            for d in Simulation.doors:
-                d.closed = True
-                #alle türen sind zu
-
-            for pp in Simulation.pressureplates:
-                for a in Simulation.agents.values():
-                    if a.x == pp.x and a.y == pp.y:
-                        doors = [d for d in Simulation.doors if d.key == pp.key] # TODO: eigene funktion machen
-                        for d in doors:
-                            d.closed = False
-                        break
-                else:
-                    # no agent was on this pp - boxes
-                    for box in Simulation.boxes:
-                        if box.x == pp.x and box.y == pp.y:
-                            doors = [d for d in Simulation.doors if d.key == pp.key] # TODO: eigene funktion machen
-                            for d in doors:
-                                d.closed = False
+            # --- generally, all doors are closed ---
+            for door in Simulation.doors:
+                door.closed = True
+                # but, when one of it's connected pressure_plates is triggered (by box or agent), the door is open
+                for pressure_plate in  [pp for pp in Simulation.pressureplates if pp.key == door.key]:
+                    for item in list(Simulation.agents.values()) + Simulation.boxes:
+                        if item.x == pressure_plate.x and item.y == pressure_plate.y:
+                            door.closed = False
                             break
-
-
-
-            #---
-            for d in Simulation.doors:
-                if d.closed is True and d.color != d.colorclosed:
-                    d.color = d.colorclosed
-                elif d.closed is False and d.color != d.coloropen:
-                    d.color = d.coloropen
+                    if not door.closed:
+                        break
+            # update field of view for each agent
             for a in Simulation.agents.values():
-                a.make_fov_map()
+                if a.hp > 0:
+                    a.make_fov_map()
 
             # update global fov map, make everything dark
             Simulation.fov_map = [[False for tile in line] for line in Simulation.tiles]
             # update indivdiual fov map for each agent, make global map light
-            for agent in Simulation.agents.values():
+            for agent in [a for a in Simulation.agents.values() if a.hp >0]:
                 for y, line in enumerate(agent.fov_map):
                     for x, tile in enumerate(line):
                         if agent.fov_map[y][x]:
